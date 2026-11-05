@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# A fake `aws` command used by the tests. It never talks to AWS.
+#
+# Behaviour is driven by files in $FAKE_AWS_DIR:
+#   instances.txt          output of `ec2 describe-instances` (tab-separated rows)
+#   snapshots.txt          output of `ec2 describe-snapshots`
+#   excluded-<instance>    output of `ec2 describe-volumes` for that instance (opted-out volumes)
+#   volumes-<instance>     volume IDs create-snapshots should "snapshot" (default: vol-<instance>)
+#   in-use                 snapshot IDs that are used by an AMI (delete fails with InUse)
+#   fail-<operation>       make that operation fail (e.g. fail-create-snapshots)
+#   unauthorized           dry-run calls answer UnauthorizedOperation
+# Every call is appended to $FAKE_AWS_DIR/calls.log (one line, args joined by spaces).
+set -euo pipefail
+dir="${FAKE_AWS_DIR:?FAKE_AWS_DIR must be set}"
+echo "$*" >>"$dir/calls.log"
+
+if [[ "${1:-}" == "--version" ]]; then
+  echo "aws-cli/2.17.0 Python/3.12.0 Linux/6 exe/x86_64"
+  exit 0
+fi
+
+# Drop global options (--region X, --profile Y) to find the service/operation.
+args=("$@")
+pos=()
+i=0
+dry=false
+while [[ $i -lt ${#args[@]} ]]; do
+  case "${args[$i]}" in
+    --region | --profile) i=$((i + 2)) ;;
+    --dry-run) dry=true; i=$((i + 1)) ;;
+    *) pos+=("${args[$i]}"); i=$((i + 1)) ;;
+  esac
+done
+service="${pos[0]:-}"
+op="${pos[1]:-}"
+
+if [[ "$service" == "configure" ]]; then
+  echo "us-east-1"
+  exit 0
+fi
+
+if [[ -f "$dir/fail-$op" ]]; then
+  echo "An error occurred (InternalError) when calling the $op operation: simulated failure" >&2
+  exit 254
+fi
+
+if [[ "$dry" == true ]]; then
+  if [[ -f "$dir/unauthorized" ]]; then
+    echo "An error occurred (UnauthorizedOperation) when calling the $op operation: not authorized" >&2
+  else
+    echo "An error occurred (DryRunOperation) when calling the $op operation: Request would have succeeded, but DryRun flag is set." >&2
+  fi
+  exit 254
+fi
+
+# Value of an option, e.g. opt --snapshot-id
+opt() {
+  local name="$1" j
+  for ((j = 0; j < ${#args[@]}; j++)); do
+    if [[ "${args[$j]}" == "$name" ]]; then
+      echo "${args[$((j + 1))]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+case "$op" in
+  describe-regions) printf 'us-east-1\teu-west-1\n' ;;
+  describe-instances) cat "$dir/instances.txt" 2>/dev/null || true ;;
+  describe-snapshots) cat "$dir/snapshots.txt" 2>/dev/null || true ;;
+  describe-volumes)
+    inst=""
+    for a in "${args[@]}"; do
+      [[ "$a" == Name=attachment.instance-id,Values=* ]] && inst="${a#*Values=}"
+    done
+    cat "$dir/excluded-$inst" 2>/dev/null || true
+    ;;
+  create-snapshots)
+    spec="$(opt --instance-specification)"
+    inst="$(sed -E 's/.*"InstanceId":"([^"]+)".*/\1/' <<<"$spec")"
+    vols="$(cat "$dir/volumes-$inst" 2>/dev/null || echo "vol-$inst")"
+    n=0
+    # shellcheck disable=SC2086  # split the volume list on whitespace on purpose
+    for v in $vols; do
+      n=$((n + 1))
+      printf '%s\tsnap-%s-%d\n' "$v" "$inst" "$n"
+    done
+    ;;
+  delete-snapshot)
+    sid="$(opt --snapshot-id)"
+    if grep -qx "$sid" "$dir/in-use" 2>/dev/null; then
+      echo "An error occurred (InvalidSnapshot.InUse) when calling the DeleteSnapshot operation: The snapshot $sid is currently in use by ami-123" >&2
+      exit 254
+    fi
+    echo "$sid" >>"$dir/deleted"
+    ;;
+  wait) echo "waited" >>"$dir/waited" ;;
+  *) echo "fake-aws: unsupported call: $*" >&2; exit 2 ;;
+esac

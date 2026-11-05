@@ -1,0 +1,19 @@
+# Runs the backup once. Started by ebs-snapshot-backup.timer.
+# Install: see README.md -> "Run it on a schedule"
+[Unit]
+Description=EBS snapshot backup and retention
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Settings live in an env file so the unit never needs editing.
+EnvironmentFile=-/etc/default/ebs-snapshot-backup
+ExecStart=/usr/local/bin/ebs-snapshot-backup.sh $EBS_BACKUP_ARGS
+User=ebs-backup
+# Hardening: the script only needs network access and /tmp for its lock.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/tmp

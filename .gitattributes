@@ -1,0 +1,6 @@
+# Shell scripts MUST use LF line endings: a script saved with Windows CRLF fails
+# with errors like "$'\r': command not found".
+* text=auto eol=lf
+*.sh text eol=lf
+tests/helpers/fake-aws text eol=lf
+*.bats text eol=lf

@@ -1,0 +1,13 @@
+# Daily at 02:00 UTC, with up to 15 minutes of random delay so many hosts
+# don't all call the AWS API at once. Persistent=true runs a missed backup
+# as soon as the machine is back up.
+[Unit]
+Description=Daily EBS snapshot backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

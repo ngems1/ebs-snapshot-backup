@@ -1,0 +1,33 @@
+# Optional: run the backup from GitHub Actions on a schedule (no server needed).
+# Copy to .github/workflows/ in a repo that has an IAM role trusted via OIDC
+# (see project 4, cross-account-cicd) with iam/ebs-snapshot-backup-policy.json attached.
+name: ebs-snapshot-backup
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (change nothing)"
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.EBS_BACKUP_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Snapshot + retention
+        run: |
+          args=(--regions us-east-1 --retention-days 30)
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then args+=(--dry-run); fi
+          bash bin/ebs-snapshot-backup.sh "${args[@]}"

@@ -1,0 +1,11 @@
+# Local logs / scratch
+*.log
+*.lock
+.env
+/tmp/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
