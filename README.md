@@ -275,5 +275,3 @@ The tests use [`tests/helpers/fake-aws`](tests/helpers/fake-aws), a stand-in for
 ## License
 
 [MIT](LICENSE)
-#   e b s - s n a p s h o t - b a c k u p  
- 
